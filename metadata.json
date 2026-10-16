@@ -1,0 +1,6 @@
+{
+  "name": "GhostShare",
+  "description": "GhostShare - Stealth media discovery and universal file-sharing platform for 8K, 4K, 1080p, 720p, and 480p digital media.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
