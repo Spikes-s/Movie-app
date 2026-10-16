@@ -207,7 +207,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           progress.status === 'assembling'
             ? 'Assembling & hashing high-resolution media...'
             : progress.status === 'uploading'
-            ? 'Uploading to secure GhostShare storage...'
+            ? 'Uploading to secure VaultShare Cloudflare R2 storage...'
             : progress.status === 'completed'
             ? 'Processing complete!'
             : progress.status === 'paused'

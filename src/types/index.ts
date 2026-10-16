@@ -124,4 +124,6 @@ export interface SystemSettings {
   allowedFileCategories: string[];
   enablePublicRegistration: boolean;
   maintenanceMode: boolean;
+  shutdownReason?: string;
+  shutdownAt?: string;
 }

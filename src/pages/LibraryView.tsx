@@ -25,15 +25,24 @@ interface LibraryViewProps {
   onSelectFile: (file: FileItem) => void;
   onOpenUpload: () => void;
   onShareFile: (file: FileItem) => void;
+  initialTab?: 'uploads' | 'favorites' | 'collections';
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
   onSelectFile,
   onOpenUpload,
-  onShareFile
+  onShareFile,
+  initialTab = 'uploads'
 }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'uploads' | 'favorites' | 'collections'>('uploads');
+  const [activeTab, setActiveTab] = useState<'uploads' | 'favorites' | 'collections'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
   const [myUploads, setMyUploads] = useState<FileItem[]>([]);
   const [favoriteFiles, setFavoriteFiles] = useState<FileItem[]>([]);
   const [collections, setCollections] = useState<CollectionItem[]>([]);

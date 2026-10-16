@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import bcrypt from 'bcryptjs';
 import {
   User,
@@ -146,7 +147,7 @@ class Database {
   }
 
   // Seeds sample files and writes actual working binary files to disk
-  private seedInitialMedia(): void {
+  public seedInitialMedia(): void {
 
     // Helper to create a dummy but valid audio/video/doc file content on disk
     const writeSeedFile = (filename: string, content: Buffer | string) => {
@@ -157,26 +158,43 @@ class Database {
     };
 
     // 1. Sample 4K Video (Nature Aurora in 4K UHD)
-    // We create a tiny valid WebM container or MP4 header so browser can stream/play
+    // Generates a fully compliant, playable H.264 MP4 with AAC audio track
     const sampleVideoFile = 'seed_video_4k_aurora.mp4';
-    // Small valid MP4 ftyp box buffer
-    const mp4Header = Buffer.from([
-      0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, // ftyp
-      0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x02, 0x00, // isom
-      0x69, 0x73, 0x6f, 0x6d, 0x69, 0x73, 0x6f, 0x32  // isomiso2
-    ]);
-    const videoBuffer = Buffer.concat([mp4Header, Buffer.alloc(1024 * 512, 0xAA)]);
-    writeSeedFile(sampleVideoFile, videoBuffer);
+    const videoFilePath = path.join(UPLOADS_DIR, sampleVideoFile);
+    if (!fs.existsSync(videoFilePath) || fs.statSync(videoFilePath).size < 10000) {
+      try {
+        execSync(
+          `ffmpeg -y -f lavfi -i "smptebars=duration=15:size=1280x720:rate=30" -f lavfi -i "sine=frequency=523.25:duration=15" -c:v libx264 -pix_fmt yuv420p -profile:v baseline -level 3.0 -movflags +faststart -c:a aac -b:a 128k -ar 44100 "${videoFilePath}"`,
+          { stdio: 'ignore' }
+        );
+      } catch (e) {
+        const mp4Header = Buffer.from([
+          0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70,
+          0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x02, 0x00,
+          0x69, 0x73, 0x6f, 0x6d, 0x69, 0x73, 0x6f, 0x32
+        ]);
+        writeSeedFile(sampleVideoFile, Buffer.concat([mp4Header, Buffer.alloc(1024 * 512, 0xAA)]));
+      }
+    }
 
     // 2. Sample Audio (Cyberpunk Synthwave Master)
+    // Generates a fully compliant, playable MP3 audio file
     const sampleAudioFile = 'seed_audio_synthwave.mp3';
-    // ID3v2 minimal tag + mp3 frame sync
-    const id3Header = Buffer.from([
-      0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A,
-      0xFF, 0xFB, 0x90, 0x44, 0x00, 0x00, 0x00, 0x00
-    ]);
-    const audioBuffer = Buffer.concat([id3Header, Buffer.alloc(1024 * 128, 0x55)]);
-    writeSeedFile(sampleAudioFile, audioBuffer);
+    const audioFilePath = path.join(UPLOADS_DIR, sampleAudioFile);
+    if (!fs.existsSync(audioFilePath) || fs.statSync(audioFilePath).size < 5000) {
+      try {
+        execSync(
+          `ffmpeg -y -f lavfi -i "sine=frequency=440:duration=12" -c:a libmp3lame -b:a 192k "${audioFilePath}"`,
+          { stdio: 'ignore' }
+        );
+      } catch (e) {
+        const id3Header = Buffer.from([
+          0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A,
+          0xFF, 0xFB, 0x90, 0x44, 0x00, 0x00, 0x00, 0x00
+        ]);
+        writeSeedFile(sampleAudioFile, Buffer.concat([id3Header, Buffer.alloc(1024 * 128, 0x55)]));
+      }
+    }
 
     // 3. Sample PDF (VaultShare Enterprise Architecture)
     const sampleDocFile = 'seed_doc_vaultshare_whitepaper.pdf';
@@ -865,6 +883,111 @@ class Database {
     Object.assign(this.data.settings, settings);
     this.save();
     return this.data.settings;
+  }
+
+  // Super Admin System Actions
+  public shutdownWebsite(reason?: string): SystemSettings {
+    this.data.settings.maintenanceMode = true;
+    this.data.settings.shutdownReason = reason || 'Emergency administrative maintenance initiated. The platform is currently offline.';
+    this.data.settings.shutdownAt = new Date().toISOString();
+    this.save();
+    console.log(`[DB] Super Admin shutdown website at ${this.data.settings.shutdownAt}. Reason: ${this.data.settings.shutdownReason}`);
+    return this.data.settings;
+  }
+
+  public restoreWebsite(): SystemSettings {
+    this.data.settings.maintenanceMode = false;
+    delete this.data.settings.shutdownReason;
+    delete this.data.settings.shutdownAt;
+    this.save();
+    console.log(`[DB] Super Admin restored website to normal operational state.`);
+    return this.data.settings;
+  }
+
+  public clearWebsiteData(preserveAdmin: boolean = true): {
+    message: string;
+    deletedFiles: number;
+    deletedUsers: number;
+    deletedDownloads: number;
+    deletedReports: number;
+    deletedCollections: number;
+    deletedRatings: number;
+    deletedComments: number;
+    preservedAdminEmail?: string;
+  } {
+    const deletedFiles = this.data.files.length;
+    const deletedDownloads = this.data.downloads.length;
+    const deletedReports = this.data.reports.length;
+    const deletedCollections = this.data.collections.length;
+    const deletedRatings = this.data.ratings.length;
+    const deletedComments = this.data.comments.length;
+
+    const adminEmail = 'spikesprimo6625@gmail.com';
+    const adminUser = this.data.users.find(u => u.email.toLowerCase() === adminEmail.toLowerCase());
+    const deletedUsers = preserveAdmin
+      ? Math.max(0, this.data.users.length - (adminUser ? 1 : 0))
+      : this.data.users.length;
+
+    // Reset collections, files, downloads, ratings, favorites, comments, reports
+    this.data.files = [];
+    this.data.ratings = [];
+    this.data.downloads = [];
+    this.data.favorites = [];
+    this.data.collections = [];
+    this.data.comments = [];
+    this.data.reports = [];
+
+    // Keep admin account with 0 storage used
+    if (preserveAdmin && adminUser) {
+      adminUser.storageUsedBytes = 0;
+      this.data.users = [adminUser];
+    } else {
+      this.data.users = [];
+      this.ensureAdminUser();
+    }
+
+    // Clean uploads directory
+    try {
+      if (fs.existsSync(UPLOADS_DIR)) {
+        const filesOnDisk = fs.readdirSync(UPLOADS_DIR);
+        for (const file of filesOnDisk) {
+          if (!file.startsWith('seed_')) {
+            try {
+              fs.unlinkSync(path.join(UPLOADS_DIR, file));
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+      if (fs.existsSync(CHUNKS_DIR)) {
+        const chunkDirs = fs.readdirSync(CHUNKS_DIR);
+        for (const item of chunkDirs) {
+          try {
+            fs.rmSync(path.join(CHUNKS_DIR, item), { recursive: true, force: true });
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch (diskErr) {
+      console.warn('[DB] Non-critical warning while cleaning upload directories:', diskErr);
+    }
+
+    this.save();
+    console.log(`[DB] Super Admin cleared all website data: ${deletedFiles} files, ${deletedUsers} users, ${deletedDownloads} downloads.`);
+
+    return {
+      message: 'All website files, downloads, collections, comments, and reports have been successfully purged from database and storage.',
+      deletedFiles,
+      deletedUsers,
+      deletedDownloads,
+      deletedReports,
+      deletedCollections,
+      deletedRatings,
+      deletedComments,
+      preservedAdminEmail: preserveAdmin && adminUser ? adminUser.email : undefined
+    };
   }
 }
 

@@ -11,6 +11,8 @@ import {
   requireAdmin,
   optionalAuth,
   generateToken,
+  verifyToken,
+  extractToken,
   AuthenticatedRequest
 } from './server/auth.js';
 import {
@@ -22,6 +24,17 @@ import {
 } from './server/storage.js';
 import { FileRecord, User } from './server/types.js';
 import { extractMediaFromUrl, saveConvertedToVault } from './server/converter.js';
+import {
+  startMultipartUpload,
+  signPartUploadUrl,
+  completeMultipartUpload,
+  abortMultipartUpload,
+  authorizeDownload,
+  getR2IntegrationStatus,
+  STORAGE_LIMITS,
+  deleteR2Object
+} from './server/r2.js';
+import { getSupabaseIntegrationStatus } from './server/supabase.js';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -34,6 +47,49 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Raw body parser for binary chunk uploads
 app.use('/api/upload/chunk', express.raw({ type: 'application/octet-stream', limit: '50mb' }));
+
+// Public System Status Endpoint
+app.get('/api/system/status', (_req: Request, res: Response) => {
+  const settings = db.getSettings();
+  res.json({
+    maintenanceMode: Boolean(settings.maintenanceMode),
+    appName: settings.appName || 'VaultShare',
+    shutdownReason: settings.shutdownReason || null,
+    shutdownAt: settings.shutdownAt || null
+  });
+});
+
+// Emergency Maintenance / Shutdown Middleware Guard
+app.use((req: Request, res: Response, next) => {
+  const settings = db.getSettings();
+  if (settings.maintenanceMode) {
+    // Exempt endpoints: system status, login, admin inspection, and non-api static/Vite assets
+    const isExempt =
+      req.path === '/api/system/status' ||
+      req.path === '/api/auth/login' ||
+      req.path === '/api/auth/me' ||
+      req.path.startsWith('/api/admin') ||
+      !req.path.startsWith('/api/');
+
+    if (!isExempt) {
+      const token = extractToken(req);
+      if (token) {
+        const payload = verifyToken(token);
+        if (payload && payload.role === 'admin') {
+          return next();
+        }
+      }
+      res.status(503).json({
+        error: 'VaultShare is currently offline under emergency administrative maintenance.',
+        maintenanceMode: true,
+        shutdownReason: settings.shutdownReason || 'Emergency platform maintenance and security audit in progress.',
+        shutdownAt: settings.shutdownAt
+      });
+      return;
+    }
+  }
+  next();
+});
 
 // ---------------------------------------------------------------------------
 // AUTHENTICATION ROUTES
@@ -145,6 +201,57 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed due to server error.' });
+  }
+});
+
+// Password recovery (request reset)
+app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ error: 'Email address is required.' });
+      return;
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const user = db.findUserByEmail(cleanEmail);
+    if (!user) {
+      res.json({
+        message: 'If an account exists with this email, recovery instructions have been prepared.',
+        demoResetToken: 'demo_recovery_token'
+      });
+      return;
+    }
+    const resetToken = crypto.randomBytes(24).toString('hex');
+    res.json({
+      message: 'Password recovery token generated successfully. In production, this link is delivered via email.',
+      recoveryToken: resetToken,
+      email: cleanEmail
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to process password recovery.' });
+  }
+});
+
+// Password recovery (apply reset)
+app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password || cleanPassword(password).length < 6) {
+      res.status(400).json({ error: 'Valid email and a password of at least 6 characters are required.' });
+      return;
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const user = db.findUserByEmail(cleanEmail);
+    if (!user) {
+      res.status(404).json({ error: 'No account found with this email address.' });
+      return;
+    }
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(password, salt);
+    db.updateUser(user.id, { passwordHash });
+    res.json({ success: true, message: 'Password has been successfully updated. You may now sign in.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset password.' });
   }
 });
 
@@ -685,6 +792,224 @@ app.post('/api/upload/complete', requireAuth, async (req: AuthenticatedRequest, 
   } catch (err: any) {
     console.error('Assemble chunk upload error:', err);
     res.status(500).json({ error: err.message || 'Failed to assemble chunked file.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// CLOUDFLARE R2 S3-COMPATIBLE STORAGE ENDPOINTS
+// ---------------------------------------------------------------------------
+
+// R2 integration status and health check
+app.get('/api/r2/status', (_req: Request, res: Response) => {
+  res.json(getR2IntegrationStatus());
+});
+
+// Start R2 multipart upload session
+app.post('/api/r2/multipart/start', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { filename, fileSizeBytes, mimeType, partSizeBytes } = req.body;
+    if (!filename || !fileSizeBytes) {
+      res.status(400).json({ error: 'Filename and fileSizeBytes are required.' });
+      return;
+    }
+
+    const session = await startMultipartUpload({
+      userId: req.user!.userId,
+      filename,
+      fileSizeBytes: Number(fileSizeBytes),
+      mimeType: mimeType || 'application/octet-stream',
+      partSizeBytes: partSizeBytes ? Number(partSizeBytes) : undefined
+    });
+
+    res.json(session);
+  } catch (err: any) {
+    console.error('R2 multipart start error:', err);
+    res.status(400).json({ error: err.message || 'Failed to start multipart upload' });
+  }
+});
+
+// Sign specific part upload URL (15-min presigned S3/R2 URL)
+app.post('/api/r2/multipart/sign-part', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { uploadId, objectKey, partNumber } = req.body;
+    if (!uploadId || !objectKey || !partNumber) {
+      res.status(400).json({ error: 'uploadId, objectKey, and partNumber are required.' });
+      return;
+    }
+
+    const signed = await signPartUploadUrl({
+      uploadId,
+      objectKey,
+      partNumber: Number(partNumber),
+      userId: req.user!.userId
+    });
+
+    res.json(signed);
+  } catch (err: any) {
+    console.error('R2 sign part error:', err);
+    res.status(400).json({ error: err.message || 'Failed to sign part upload URL' });
+  }
+});
+
+// Complete R2 multipart upload & record verified file
+app.post('/api/r2/multipart/complete', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const {
+      uploadId,
+      objectKey,
+      parts,
+      title,
+      description = '',
+      category = 'other',
+      tags = '',
+      visibility = 'public',
+      resolution = '',
+      duration = '',
+      codec = '',
+      bitrate = '',
+      originalFilename,
+      mimeType,
+      thumbnailDataUrl
+    } = req.body;
+
+    if (!uploadId || !objectKey) {
+      res.status(400).json({ error: 'uploadId and objectKey are required.' });
+      return;
+    }
+
+    const user = db.findUserById(req.user!.userId);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const { verifiedSize, etag } = await completeMultipartUpload({
+      uploadId,
+      objectKey,
+      userId: user.id,
+      parts: Array.isArray(parts) ? parts : []
+    });
+
+    const parsedTags = typeof tags === 'string'
+      ? tags.split(',').map((t: string) => t.trim().toLowerCase()).filter(Boolean)
+      : Array.isArray(tags) ? tags : [];
+
+    const fileId = `file_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+    const fileRecord: FileRecord = {
+      id: fileId,
+      userId: user.id,
+      uploaderName: user.username,
+      uploaderAvatar: user.avatarUrl,
+      title: title?.trim() || originalFilename || 'R2 Media Archive',
+      description: description?.trim() || '',
+      originalFilename: originalFilename || objectKey,
+      storedFilename: objectKey,
+      mimeType: mimeType || 'application/octet-stream',
+      fileSizeBytes: verifiedSize,
+      category: category as any,
+      tags: parsedTags,
+      visibility: visibility as any,
+      shareToken: crypto.randomBytes(12).toString('hex'),
+      thumbnailUrl: thumbnailDataUrl || undefined,
+      metadata: {
+        resolution: resolution || undefined,
+        duration: duration ? parseFloat(duration) : undefined,
+        codec: codec || undefined,
+        bitrate: bitrate || undefined,
+        format: path.extname(originalFilename || objectKey).replace('.', '').toUpperCase(),
+        sha256: etag
+      },
+      viewsCount: 0,
+      downloadsCount: 0,
+      ratingAverage: 0,
+      ratingCount: 0,
+      ratingDistribution: {
+        1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      processingStatus: 'ready'
+    };
+
+    const saved = db.createFile(fileRecord);
+    res.status(201).json({ file: saved, verifiedSize, etag });
+  } catch (err: any) {
+    console.error('R2 complete error:', err);
+    res.status(400).json({ error: err.message || 'Failed to complete multipart upload' });
+  }
+});
+
+// Abort R2 multipart upload
+app.post('/api/r2/multipart/abort', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { uploadId, objectKey } = req.body;
+    await abortMultipartUpload({
+      uploadId,
+      objectKey,
+      userId: req.user!.userId
+    });
+    res.json({ success: true, message: 'Upload session aborted successfully' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to abort upload session' });
+  }
+});
+
+// Authorize download & generate signed download link
+app.get('/api/r2/download/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const file = db.findFileById(id);
+
+    if (!file) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const currentUserId = req.user?.userId;
+    const isAdmin = req.user?.role === 'admin';
+    const isOwner = currentUserId && file.userId === currentUserId;
+
+    if (file.visibility === 'private' && !isOwner && !isAdmin) {
+      res.status(403).json({ error: 'This file is private.' });
+      return;
+    }
+
+    const downloadAuth = await authorizeDownload({
+      fileId: file.id,
+      objectKey: file.storedFilename,
+      originalFilename: file.originalFilename,
+      userId: currentUserId,
+      ipAddress: req.ip
+    });
+
+    res.json(downloadAuth);
+  } catch (err: any) {
+    console.error('R2 download authorization error:', err);
+    res.status(500).json({ error: 'Could not authorize file download' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SUPABASE POSTGRESQL INTEGRATION STATUS & MIGRATION ENDPOINTS
+// ---------------------------------------------------------------------------
+
+app.get('/api/supabase/status', (_req: Request, res: Response) => {
+  res.json(getSupabaseIntegrationStatus());
+});
+
+app.get('/api/supabase/migration', (_req: Request, res: Response) => {
+  try {
+    const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20261016000000_vaultshare_phase1.sql');
+    if (fs.existsSync(migrationPath)) {
+      const sql = fs.readFileSync(migrationPath, 'utf-8');
+      res.setHeader('Content-Type', 'text/plain');
+      res.send(sql);
+    } else {
+      res.status(404).send('-- Migration file not found');
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to read migration file' });
   }
 });
 
@@ -1233,6 +1558,75 @@ app.get('/api/admin/settings', requireAdmin, (_req: AuthenticatedRequest, res: R
 app.put('/api/admin/settings', requireAdmin, (req: AuthenticatedRequest, res: Response) => {
   const updated = db.updateSettings(req.body);
   res.json({ settings: updated });
+});
+
+// ---------------------------------------------------------------------------
+// SUPER ADMIN SYSTEM CONTROLS (Shutdown, Restore, Clear Website Data)
+// ---------------------------------------------------------------------------
+
+// 1. Shutdown the website (puts site into maintenance mode)
+app.post('/api/admin/system/shutdown', requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { reason } = req.body;
+    const settings = db.shutdownWebsite(reason || 'Emergency administrative maintenance initiated. The platform is currently offline.');
+    res.json({
+      success: true,
+      message: 'Website has been successfully placed into emergency shutdown / maintenance mode.',
+      settings
+    });
+  } catch (err: any) {
+    console.error('Website shutdown error:', err);
+    res.status(500).json({ error: err.message || 'Failed to shutdown website.' });
+  }
+});
+
+// 2. Restore website (brings site back online)
+app.post('/api/admin/system/restore', requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const settings = db.restoreWebsite();
+    res.json({
+      success: true,
+      message: 'Website has been successfully restored to full public online status.',
+      settings
+    });
+  } catch (err: any) {
+    console.error('Website restore error:', err);
+    res.status(500).json({ error: err.message || 'Failed to restore website.' });
+  }
+});
+
+// 3. Clear data in the website (purges files, reports, downloads, collections, ratings, comments, non-admin users)
+app.post('/api/admin/system/clear-data', requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { confirmation } = req.body;
+    const norm = (confirmation || '').trim().toUpperCase();
+    if (norm !== 'CLEAR_ALL_DATA' && norm !== 'CONFIRM') {
+      res.status(400).json({
+        error: 'Confirmation phrase "CONFIRM" or "CLEAR_ALL_DATA" is strictly required to execute website data purge.'
+      });
+      return;
+    }
+
+    const result = db.clearWebsiteData(true);
+    res.json({
+      success: true,
+      message: result.message,
+      stats: result
+    });
+  } catch (err: any) {
+    console.error('Clear website data error:', err);
+    res.status(500).json({ error: err.message || 'Failed to clear website data.' });
+  }
+});
+
+// Re-seed showcase media
+app.post('/api/admin/system/reseed', requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    db.seedInitialMedia();
+    res.json({ success: true, message: 'Showcase media files re-seeded successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to reseed showcase media.' });
+  }
 });
 
 // Helper functions

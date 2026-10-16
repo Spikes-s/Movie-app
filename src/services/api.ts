@@ -313,6 +313,49 @@ export const api = {
     });
   },
 
+  // Super Admin System Actions
+  async getSystemStatus(): Promise<{
+    maintenanceMode: boolean;
+    appName: string;
+    shutdownReason?: string;
+    shutdownAt?: string;
+  }> {
+    return request('/api/system/status');
+  },
+
+  async shutdownWebsite(reason?: string): Promise<{ success: boolean; message: string; settings: SystemSettings }> {
+    return request('/api/admin/system/shutdown', {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    });
+  },
+
+  async restoreWebsite(): Promise<{ success: boolean; message: string; settings: SystemSettings }> {
+    return request('/api/admin/system/restore', {
+      method: 'POST'
+    });
+  },
+
+  async clearWebsiteData(confirmation: string): Promise<{
+    success: boolean;
+    message: string;
+    stats: {
+      deletedFiles: number;
+      deletedUsers: number;
+      deletedDownloads: number;
+      deletedReports: number;
+      deletedCollections: number;
+      deletedRatings: number;
+      deletedComments: number;
+      preservedAdminEmail?: string;
+    };
+  }> {
+    return request('/api/admin/system/clear-data', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation })
+    });
+  },
+
   // Converter & Watermark-Free Link Extraction
   async extractMedia(url: string): Promise<{ mediaInfo: any }> {
     return request('/api/converter/extract', {
@@ -332,6 +375,73 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data)
     });
+  },
+
+  // Account Password Recovery
+  async forgotPassword(email: string): Promise<{ message: string; recoveryToken?: string }> {
+    return request('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+  },
+
+  async resetPassword(email: string, password: string): Promise<{ success: boolean; message: string }> {
+    return request('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+  },
+
+  // Cloudflare R2 Object Storage Methods
+  async getR2Status(): Promise<any> {
+    return request('/api/r2/status');
+  },
+
+  async startR2Multipart(data: {
+    filename: string;
+    fileSizeBytes: number;
+    mimeType: string;
+    partSizeBytes?: number;
+  }): Promise<any> {
+    return request('/api/r2/multipart/start', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  async signR2Part(data: {
+    uploadId: string;
+    objectKey: string;
+    partNumber: number;
+  }): Promise<{ partNumber: number; signedUrl: string; expiresInSeconds: number }> {
+    return request('/api/r2/multipart/sign-part', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  async completeR2Multipart(data: any): Promise<{ file: FileItem; verifiedSize: number; etag: string }> {
+    return request('/api/r2/multipart/complete', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  async abortR2Multipart(data: { uploadId: string; objectKey: string }): Promise<{ success: boolean }> {
+    return request('/api/r2/multipart/abort', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  // Supabase PostgreSQL Integration Methods
+  async getSupabaseStatus(): Promise<any> {
+    return request('/api/supabase/status');
+  },
+
+  async getSupabaseMigration(): Promise<string> {
+    const res = await fetch('/api/supabase/migration');
+    return res.text();
   }
 };
 

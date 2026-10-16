@@ -10,60 +10,13 @@
       "bio": "Chief System Administrator & GhostShare Security Lead.",
       "isEmailVerified": true,
       "createdAt": "2026-10-16T06:09:27.119Z",
-      "lastLoginAt": "2026-10-16T07:31:09.739Z",
-      "storageUsedBytes": 472383512,
+      "lastLoginAt": "2026-10-16T12:48:44.212Z",
+      "storageUsedBytes": 0,
       "storageLimitBytes": 536870912000,
       "isSuspended": false
     }
   ],
   "files": [
-    {
-      "id": "converted_1792135869774_227a9973",
-      "userId": "admin_spikesprimo",
-      "uploaderName": "PrimoAdmin",
-      "uploaderAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      "title": "Cyberpunk Neon Dance Clip [1080p FHD]",
-      "description": "Clean watermark-free MP4 recovered from: https://www.tiktok.com/@artist/video/12345",
-      "originalFilename": "Cyberpunk_Neon_Dance_Clip_nowatermark.mp4",
-      "storedFilename": "converted_1792135869774_227a9973.mp4",
-      "mimeType": "video/mp4",
-      "fileSizeBytes": 524312,
-      "category": "video",
-      "tags": [
-        "converted",
-        "nowatermark",
-        "mp4",
-        "link-recovery"
-      ],
-      "visibility": "public",
-      "shareToken": "d71e16ac46bd9b2084959aa0",
-      "thumbnailUrl": "https://images.unsplash.com/photo-1611162618071-b39a2ec055fb",
-      "metadata": {
-        "resolution": "1920x1080 (1080p FHD)",
-        "duration": 180,
-        "format": "MP4",
-        "sha256": "5d250e0a776e4744558700a060c042c5441fa921d3255b8b7353c6777e565ece"
-      },
-      "viewsCount": 1,
-      "downloadsCount": 0,
-      "ratingAverage": 10,
-      "ratingCount": 1,
-      "ratingDistribution": {
-        "1": 0,
-        "2": 0,
-        "3": 0,
-        "4": 0,
-        "5": 0,
-        "6": 0,
-        "7": 0,
-        "8": 0,
-        "9": 0,
-        "10": 1
-      },
-      "createdAt": "2026-10-16T07:31:09.775Z",
-      "updatedAt": "2026-10-16T07:31:09.775Z",
-      "processingStatus": "ready"
-    },
     {
       "id": "file_8k_deep_cosmos",
       "userId": "admin_spikesprimo",
@@ -115,8 +68,8 @@
         "9": 20,
         "10": 118
       },
-      "createdAt": "2026-10-14T06:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-14T12:48:18.198Z",
+      "updatedAt": "2026-10-16T12:48:18.198Z",
       "processingStatus": "ready"
     },
     {
@@ -170,8 +123,8 @@
         "9": 32,
         "10": 154
       },
-      "createdAt": "2026-10-15T06:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-15T12:48:18.199Z",
+      "updatedAt": "2026-10-16T12:48:18.199Z",
       "processingStatus": "ready"
     },
     {
@@ -225,8 +178,8 @@
         "9": 20,
         "10": 84
       },
-      "createdAt": "2026-10-14T18:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-15T00:48:18.199Z",
+      "updatedAt": "2026-10-16T12:48:18.199Z",
       "processingStatus": "ready"
     },
     {
@@ -279,8 +232,8 @@
         "9": 18,
         "10": 52
       },
-      "createdAt": "2026-10-14T04:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-14T10:48:18.199Z",
+      "updatedAt": "2026-10-16T12:48:18.199Z",
       "processingStatus": "ready"
     },
     {
@@ -333,8 +286,8 @@
         "9": 10,
         "10": 28
       },
-      "createdAt": "2026-10-13T18:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-14T00:48:18.199Z",
+      "updatedAt": "2026-10-16T12:48:18.199Z",
       "processingStatus": "ready"
     },
     {
@@ -383,8 +336,8 @@
         "9": 18,
         "10": 60
       },
-      "createdAt": "2026-10-15T18:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-16T00:48:18.199Z",
+      "updatedAt": "2026-10-16T12:48:18.199Z",
       "processingStatus": "ready"
     },
     {
@@ -430,8 +383,8 @@
         "9": 10,
         "10": 38
       },
-      "createdAt": "2026-10-13T06:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-13T12:48:18.199Z",
+      "updatedAt": "2026-10-16T12:48:18.199Z",
       "processingStatus": "ready"
     },
     {
@@ -477,8 +430,8 @@
         "9": 25,
         "10": 135
       },
-      "createdAt": "2026-10-12T06:09:27.124Z",
-      "updatedAt": "2026-10-16T06:09:27.124Z",
+      "createdAt": "2026-10-12T12:48:18.199Z",
+      "updatedAt": "2026-10-16T12:48:18.199Z",
       "processingStatus": "ready"
     }
   ],

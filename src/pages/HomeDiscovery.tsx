@@ -24,19 +24,29 @@ interface HomeDiscoveryProps {
   onSelectFile: (file: FileItem) => void;
   onShareFile: (file: FileItem) => void;
   onOpenUpload: () => void;
+  initialCategory?: string;
+  hideHero?: boolean;
 }
 
 export const HomeDiscovery: React.FC<HomeDiscoveryProps> = ({
   searchQuery,
   onSelectFile,
   onShareFile,
-  onOpenUpload
+  onOpenUpload,
+  initialCategory,
+  hideHero = false
 }) => {
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || 'all');
   const [selectedResolution, setSelectedResolution] = useState<string>('');
   const [selectedSort, setSelectedSort] = useState<string>('trending');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (initialCategory) {
+      setSelectedCategory(initialCategory);
+    }
+  }, [initialCategory]);
 
   const fetchFiles = async () => {
     setIsLoading(true);
@@ -76,7 +86,7 @@ export const HomeDiscovery: React.FC<HomeDiscoveryProps> = ({
   return (
     <div className="space-y-8 pb-20">
       {/* Hero Showcase Spotlight */}
-      {!searchQuery && spotlightFile && (
+      {!searchQuery && !hideHero && spotlightFile && (
         <div className="relative rounded-3xl overflow-hidden border border-[#23273a] bg-gradient-to-r from-[#12131e] via-[#10111a] to-[#0a0a0f] p-6 sm:p-10 shadow-2xl">
           <div className="absolute inset-0 bg-radial-at-tr from-purple-900/20 via-transparent to-transparent pointer-events-none" />
 
